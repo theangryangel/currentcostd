@@ -1,0 +1,20 @@
+currentcostd is a python based daemon designed to listen to the output from the currentcost devices, and then store the corresponding data in an RRD database.
+
+The daemon can currently:
+  * Switch user
+  * Run the foreground for debugging purposes
+  * Runs an optional, basic, HTTP server where you can see the current power and temperature
+
+ToDos:
+  * Make the HTTP server a bit better so that it can serve some static files and introduce a bit of templating
+  * More error checking
+  * Periodical generation of graphs so that they can be included in the web page(s)
+
+Issues:
+  * It doesn't understand multiple sensors
+  * Error checking is barely there
+  * The code is probably pretty poor. My excuse is that python makes me angry and this was an attempt to see if I could live with it.
+
+At present it depends on:
+  * pyserial
+  * python-rrdtool
