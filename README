@@ -18,3 +18,9 @@ Issues:
 At present it depends on:
   * pyserial
   * python-rrdtool
+
+Thanks go out to to the following guys who have done the majority of the leg work already:
+  * Paul Mutton (http://www.jibble.org/currentcost/)
+  * Everyone involved with the currentcost project at code.google.com (http://code.google.com/p/currentcost/)
+  * James Smith (http://www.ibm.com/developerworks/xml/tutorials/x-ameetut/)
+  * "histori1" (http://forum.makehistori.com/index.php?topic=688.0)
