@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-import os, atexit, time, sys, serial, rrdtool, optparse, pwd, grp, Queue, BaseHTTPServer, threading
+import os, stat, atexit, time, sys, serial, rrdtool, optparse, pwd, grp, Queue, BaseHTTPServer, threading, datetime
 from xml.dom import minidom
 from signal import SIGTERM 
 
@@ -14,6 +14,8 @@ class ccDaemon:
 		self.pidfile = pidfile
 		self.conf = conf
 		self.rrd = rrd
+		self.uid = 0
+		self.gid = 0
 
 		# Translate user and group name to uid and gid
 		if self.conf.user != None:
@@ -61,11 +63,14 @@ class ccDaemon:
 		os.dup2(so.fileno(), sys.stdout.fileno())
 		os.dup2(se.fileno(), sys.stderr.fileno())
 
-		# Switch uid and gid
-		if (self.gid > 0):
-			os.setgid(self.gid)
-		if (self.uid > 0):
-			os.setuid(self.uid)
+		try:
+			# Switch uid and gid
+			if (self.gid > 0):
+				os.setgid(self.gid)
+			if (self.uid > 0):
+				os.setuid(self.uid)
+		except e:
+			sys.stderr.write("Failed to switch UID or GID: %d (%s)\n" % (e.errno, e.strerror))
 
 		# write pidfile
 		atexit.register(self.delpid)
@@ -163,6 +168,7 @@ class ccDaemon:
 						temperature = float(temperature_str)
 						last['power'] = power
 						last['temperature'] = temperature
+						last['time'] = str(datetime.datetime.now())
 						self.rrd.update(power, temperature)
 
 		except KeyboardInterrupt:
@@ -230,18 +236,63 @@ class rrdFront():
 
 class ccWWWHandler(BaseHTTPServer.BaseHTTPRequestHandler):
 	def do_GET(self):
+		try:
+			if self.path.startswith('/static/'):
+				self.__serve_static()
+			else:
+				self.__serve_index()
+		except Exception, e:
+			self.__serve_error()
+
+	def __serve_index(self):
 		if self.path != "/":
-		    self.send_error(404, "File not found")
-		    return
+			self.send_error(404, "File not found")
+			return
 		self.send_response(200)
 		self.send_header("Content-type", "text/html")
 		self.end_headers()
-		self.wfile.write( '<html><body><div id="power">Power: %s</div><div id="temperature">Temp: %s</div></body></html>' % (last['power'], last['temperature']) )
+		self.wfile.write( '<html><style type="text/css">@import url(/static/style.css);</style><title>CurrentCost</title><body><div id="power"><span class="title">Power:</span>%s</div><div id="temperature"><span class="title">Temp:</span>%s</div><div id="datetime"><span class="title">Last Updated:</span>%s</div></body></html>' % (last['power'], last['temperature'], last['time']) )
+
+	def __serve_static(self):
+		"""
+		Serve static files.
+		"""
+		path = "%s%s" % (wwwroot, self.path.replace("/static/", "", 1))
+
+		if os.path.isfile(path):
+			base, ext = os.path.splitext(path)
+			if ext == '.css':
+				type = 'text/css'
+				mode = 'r'
+			elif ext == '.js':
+				type = 'text/javascript'
+				mode = 'r'
+			else:
+				type = 'application/octet-stream'
+				mode = 'rb'
+		
+			fd = open(path, mode)
+			file_info = os.stat(path)
+		
+			self.send_response(200)
+			self.send_header("Content-type", type)
+			self.send_header("Content-Length", str(file_info[stat.ST_SIZE]))
+			self.end_headers()
+		
+			# Output file data
+			self.wfile.write(fd.read())
+		
+			fd.close()
+		else:
+			self.send_error(404, "File not found")
+
+	def __serve_error(self):
+		import traceback
+		self.send_error(500, "<pre>%s</pre>" % (traceback.format_exc()))
 
 class ccWWW(threading.Thread):
 	def __init__(self, port=8080):
 		threading.Thread.__init__(self)
-		self.quit = False
 		self.httpd = BaseHTTPServer.HTTPServer(("", port), ccWWWHandler)
 		self.start()
 
@@ -253,35 +304,34 @@ class ccWWW(threading.Thread):
 
 if __name__ == "__main__":
 	parser = optparse.OptionParser(version="%prog 0.1")
-
 	parser.add_option("--start", action="store_true", dest="start", help="Starts the daemon")
-	parser.add_option("--stop", action="store_true", dest="stop", help="Stops the daemon")
-	parser.add_option("--restart", action="store_true", dest="restart",	help="Restarts the daemon")
-	
-	parser.add_option("--createrrd", action="store_true", dest="createrrd",	help="Creates the rrd.")
-	
-	parser.add_option("--pid", dest="pid", default="/tmp/currentcostd.pid",	help="path to PID file.")
-	
-	parser.add_option("--wwwport", dest="wwwport", default=8080,
-		help="Port to run WWW server on. Defaults to 8080. Setting to 0 disables.")
-
-	parser.add_option("--wwwroot", dest="wwwroot", default='/var/currentcostd/wwwroot/',
-		help="Base path for wwwroot static files and templates.")
-
-	parser.add_option("--serialport", dest="serialport", default='/dev/ttyUSB0',
-		help="Port to listen for CurrentCost data on. Defaults to /dev/ttyUS0.")
-
-	parser.add_option("--setuid", dest="user",
-		help="Sets the user for the daemon to run as (ignored if --foreground is specified).")
-
-	parser.add_option("--setgid", dest="group",
-		help="Sets the group for the daemon to run as (ignored if --foreground is specified).")
-
-	parser.add_option("--setrrd", dest="rrd", default="/var/currentcostd.rrd",
-		help="Sets the path to the rrd file.")
-
+	parser.add_option("--stop", action="store_true", dest="stop",
+		help="Stops the daemon")
+	parser.add_option("--restart", action="store_true", dest="restart",
+		help="Restarts the daemon")
+	parser.add_option("--createrrd", action="store_true", dest="createrrd",
+		help="Creates the rrd.")
+	parser.add_option("--pid", dest="pid",
+		default="/tmp/currentcostd.pid",
+		help="path to PID file.")
 	parser.add_option("--foreground", action="store_true", dest="foreground",
-		help="Prevents a fork (for debugging purposes - also prevents stdin, stdout, stderr from being redirected).")
+		help="Prevents a fork (for debugging purposes - also prevents stdin, stdout, stderr from being redirected.).")
+	parser.add_option("--wwwport", dest="wwwport",
+		default=8080,
+		help="Port to run WWW server on. Defaults to 8080. Setting to 0 disables.")
+	parser.add_option("--wwwroot", dest="wwwroot",
+		default="/var/currentcostd/static/",
+		help="Base path for static files served by www server.")
+	parser.add_option("--serialport", dest="serialport",
+		default='/dev/ttyUSB0',
+		help="Port to listen for CurrentCost data on. Defaults to /dev/ttyUS0.")
+	parser.add_option("--setuid", dest="user",
+		help="Sets the user for the daemon to run as (currently unused).")
+	parser.add_option("--setgid", dest="group",
+		help="Sets the group for the daemon to run as (currently unused).")
+	parser.add_option("--setrrd", dest="rrd",
+		default="/var/currentcostd/currentcostd.rrd",
+		help="Sets the path to the rrd file.")
 
 	if len(sys.argv) < 2:
 		parser.print_usage()
@@ -293,7 +343,8 @@ if __name__ == "__main__":
 	Is this the right way to implement this? Given that we only read in the WWW thread I have
 	absolutely no idea when it comes to python... My brain thinks this is dirty tho..
 	"""
-	last = {'power': 0, 'temperature': 0}
+	last = {'power': 0, 'temperature': 0, 'time': 'Unknown'}
+	wwwroot = options.wwwroot
 	rrd = rrdFront(options.rrd)
 	daemon = ccDaemon(options.pid, options, rrd)
 	if options.createrrd == True:
