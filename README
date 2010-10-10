@@ -4,15 +4,18 @@ The daemon can currently:
   * Switch user
   * Run the foreground for debugging purposes
   * Runs an optional, basic, HTTP server where you can see the current power and temperature, and serve static files (Note, static files are very badly done and is probably exploitable at this point - just needed something working here for a demo)
+  * Uses a template file to build the web based UI
+
+Rather than make the daemon generate graphs I've currently resorted to a shell script and rrdtool on a cronjob.
 
 ToDos:
   * Make the HTTP server less crap
   * More error checking
-  * Periodical generation of graphs so that they can be included in the web page(s)
 
 Issues:
   * It doesn't understand multiple sensors
   * Error checking is barely there
+  * Not smart enough to know when its not getting data and take the necessary steps
   * The code is probably pretty poor. My excuse is that python makes me angry and this was an attempt to see if I could live with it.
 
 At present it depends on:

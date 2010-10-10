@@ -251,7 +251,11 @@ class ccWWWHandler(BaseHTTPServer.BaseHTTPRequestHandler):
 		self.send_response(200)
 		self.send_header("Content-type", "text/html")
 		self.end_headers()
-		self.wfile.write( '<html><style type="text/css">@import url(/static/style.css);</style><title>CurrentCost</title><body><div id="power"><span class="title">Power:</span>%s</div><div id="temperature"><span class="title">Temp:</span>%s</div><div id="datetime"><span class="title">Last Updated:</span>%s</div></body></html>' % (last['power'], last['temperature'], last['time']) )
+
+		template = "%s/template.html" % (wwwroot)
+		self.wfile.write(
+			self.__template(template, {'power': last['power'], 'temperature': last['temperature'], 'time': last['time']})
+		)
 
 	def __serve_static(self):
 		"""
@@ -267,6 +271,9 @@ class ccWWWHandler(BaseHTTPServer.BaseHTTPRequestHandler):
 			elif ext == '.js':
 				type = 'text/javascript'
 				mode = 'r'
+                        elif ext == '.png':
+                                type = 'image/png'
+                                mode = 'rb'
 			else:
 				type = 'application/octet-stream'
 				mode = 'rb'
@@ -289,6 +296,10 @@ class ccWWWHandler(BaseHTTPServer.BaseHTTPRequestHandler):
 	def __serve_error(self):
 		import traceback
 		self.send_error(500, "<pre>%s</pre>" % (traceback.format_exc()))
+
+	def __template(self, file, vars):
+		return open(file, 'r').read() % vars
+
 
 class ccWWW(threading.Thread):
 	def __init__(self, port=8080):
